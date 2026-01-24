@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDES
+.idea/
+.vscode/
+
+# Local data
+user_address_book/
+contacts_export.json
+*.log
+
+# Data files
+*.json
+*.csv
+
+
