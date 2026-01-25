@@ -4,7 +4,7 @@ from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.styles import Style
 from prompt_toolkit.document import Document
 
-from assistant_bot import commands
+from assistant_bot import commands, config
 from assistant_bot.utils.console import console
 from assistant_bot.utils.ux_messages import WELCOME_MESSAGES, GOODBYE_MESSAGES, WRONG_LANGUAGE_MESSAGES
 
@@ -31,10 +31,7 @@ class SmartCompleter(Completer):
         # Tag Autocompletion
         if cmd_name in ('filter_by_tag', 'remove_tag'):
             # Collect unique tags from the address book
-            # book.tags structure: {contact_name: [tag1, tag2]}
-            unique_tags = set()
-            for tag_list in self.address_book.tags.values():
-                unique_tags.update(tag_list)
+            unique_tags = self.address_book.get_unique_tags()
             
             # The word being typed (last word)
             current_word = full_command[-1] if text.endswith(' ') is False else ''
@@ -103,7 +100,7 @@ class App:
                 console.print(f"[bold red]Unexpected error: {e}[/bold red]")
 
     def _check_auto_help(self):
-        if self.consecutive_errors >= 3:
+        if self.consecutive_errors >= config.AUTO_HELP_THRESHOLD:
             console.print("\n[bold magenta]🤔 You seem lost. Here is the help menu:[/bold magenta]")
             commands.handle_help(self.address_book, [])
             self.consecutive_errors = 0

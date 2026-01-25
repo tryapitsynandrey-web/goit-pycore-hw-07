@@ -2,16 +2,22 @@ import json
 import csv
 
 
-def export_file(address_book, path: str):
+from assistant_bot.models import Record, AddressBook
+
+def export_file(address_book: AddressBook, path: str):
     if not path:
         raise ValueError('Path required')
     
     # Prepare data structure including notes and tags embedded
     export_data = {}
-    for name, c in address_book.contacts.items():
-        entry = c.copy()
-        entry['notes'] = address_book.notes.get(name, [])
-        entry['tags'] = address_book.tags.get(name, [])
+    for name, record in address_book.data.items():
+        entry = {
+            "phones": [p.value for p in record.phones],
+            "email": record.email.value if record.email else "",
+            "birthday": record.birthday.value if record.birthday else "",
+            "notes": record.notes,
+            "tags": record.tags
+        }
         export_data[name] = entry
 
     if path.lower().endswith('.json'):
@@ -21,38 +27,57 @@ def export_file(address_book, path: str):
         with open(path, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
             writer.writerow(['name', 'phones', 'email', 'birthday', 'notes', 'tags'])
-            for name, c in export_data.items():
-                phones_str = '|'.join(c.get('phones', []))
-                email_str = c.get('email', '')
-                bday_str = c.get('birthday', '')
+            for name, entry in export_data.items():
+                phones_str = '|'.join(entry['phones'])
+                email_str = entry['email']
+                bday_str = entry['birthday']
                 # Join multiple notes with ' ; ' separator to fit in one CSV cell reasonably
-                notes_str = ' ; '.join(c.get('notes', []))
-                tags_str = ','.join(c.get('tags', []))
+                notes_str = ' ; '.join(entry['notes'])
+                tags_str = ','.join(entry['tags'])
                 writer.writerow([name, phones_str, email_str, bday_str, notes_str, tags_str])
     else:
         raise ValueError('Unsupported export format')
 
 
-def import_file(address_book, path: str):
+def import_file(address_book: AddressBook, path: str):
     if not path:
         raise ValueError('Path required')
     
     if path.lower().endswith('.json'):
         with open(path, 'r', encoding='utf-8') as f:
             data = json.load(f)
-            for name, c in data.items():
-                # Extract extras
-                notes = c.pop('notes', [])
-                tags = c.pop('tags', [])
+            for name, entry in data.items():
+                record = Record(name)
                 
-                # Save contact
-                address_book.contacts[name] = c
-                
-                # Save extras
-                if notes:
-                    address_book.notes[name] = notes
-                if tags:
-                    address_book.tags[name] = tags
+                # Phones
+                # Support both list of strings or list of dicts if legacy?
+                # Assuming standardized export format above.
+                phones = entry.get('phones', [])
+                if isinstance(phones, list):
+                    for p in phones:
+                        record.add_phone(p)
+
+                # Email
+                email = entry.get('email')
+                if email:
+                    record.add_email(email)
+
+                # Birthday
+                bday = entry.get('birthday')
+                if bday:
+                    record.add_birthday(bday)
+
+                # Notes
+                notes = entry.get('notes', [])
+                for n in notes:
+                    record.add_note(n)
+
+                # Tags
+                tags = entry.get('tags', [])
+                for t in tags:
+                    record.add_tag(t)
+
+                address_book.add_record(record)
                     
     elif path.lower().endswith('.csv'):
         with open(path, 'r', encoding='utf-8') as f:
@@ -61,23 +86,33 @@ def import_file(address_book, path: str):
                 name = row.get('name')
                 if not name:
                     continue
-                    
-                phones = row.get('phones', '').split('|') if row.get('phones') else []
+                
+                record = Record(name)
+                
+                phones_str = row.get('phones')
+                if phones_str:
+                    for p in phones_str.split('|'):
+                        if p: record.add_phone(p)
+
                 email = row.get('email')
+                if email:
+                    record.add_email(email)
+
                 birthday = row.get('birthday')
+                if birthday:
+                     record.add_birthday(birthday)
                 
                 notes_raw = row.get('notes')
-                notes = notes_raw.split(' ; ') if notes_raw else []
+                if notes_raw:
+                    for n in notes_raw.split(' ; '):
+                        if n: record.add_note(n)
                 
                 tags_raw = row.get('tags')
-                tags = tags_raw.split(',') if tags_raw else []
+                if tags_raw:
+                    for t in tags_raw.split(','):
+                        if t: record.add_tag(t)
                 
-                # Save
-                address_book.contacts[name] = {'phones': phones, 'email': email, 'birthday': birthday}
-                if notes:
-                    address_book.notes[name] = notes
-                if tags:
-                    address_book.tags[name] = tags
+                address_book.add_record(record)
     else:
         raise ValueError('Unsupported import format')
 

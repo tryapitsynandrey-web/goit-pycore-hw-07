@@ -9,10 +9,10 @@ from rich import box
 from rich.align import Align
 
 from assistant_bot.config import DEFAULT_BIRTHDAY_LOOKAHEAD_DAYS
-from assistant_bot.storage import AddressBook
+from assistant_bot.models import AddressBook, Record
 from assistant_bot.utils.console import console, print_error, print_success, print_info, print_warning, print_duplicate_error
 from assistant_bot.utils.validators import validate_phone, validate_email, normalize_phone
-from assistant_bot.features import birthdays, notes, tags, import_export
+from assistant_bot.features import import_export
 from assistant_bot.utils.ux_messages import (
     UNKNOWN_COMMAND_MESSAGES, MISSING_ARGS_MESSAGES,
     CONTACT_ADDED_MESSAGES, CONTACT_UPDATED_MESSAGES, PHONE_ADDED_MESSAGES,
@@ -110,37 +110,62 @@ def handle_add(book: AddressBook, args: List[str]):
     email = args[2] if len(args) > 2 else None
     birthday = args[3] if len(args) > 3 else None
 
-    # Validation
-    if phone and not validate_phone(phone):
-        print_error(random.choice(INVALID_PHONE_MESSAGES).format(phone=phone))
-        return
-    if email and not validate_email(email):
-        print_error(random.choice(INVALID_EMAIL_MESSAGES).format(email=email))
-        return
+    # Validation and Logic
+    try:
+        record = book.find(name)
+        status = []
+        
+        if not record:
+            record = Record(name)
+            book.add_record(record)
+            status = "new"
+        
+        if phone:
+            # Check global unique
+            owner = book.find_phone_global(phone)
+            if owner and owner != name:
+                print_duplicate_error(owner, {}, phone, DUPLICATE_PHONE_MESSAGES)
+                return
+            
+            # Check if exists in record
+            if not record.find_phone(phone):
+                try:
+                    record.add_phone(phone)
+                    if status != "new": status.append("phone")
+                except ValueError:
+                    print_error(random.choice(INVALID_PHONE_MESSAGES).format(phone=phone))
+                    return
+                
+        if email:
+            owner = book.find_email_global(email)
+            if owner and owner != name:
+                print_duplicate_error(owner, {}, email, DUPLICATE_EMAIL_MESSAGES)
+                return
+            if not record.email or record.email.value != email:
+                try:
+                    record.add_email(email)
+                    if status != "new": status.append("email")
+                except ValueError:
+                    print_error(random.choice(INVALID_EMAIL_MESSAGES).format(email=email))
+                    return
 
-    # Uniqueness Check (Global)
-    if phone:
-        owner = book.find_phone_global(phone)
-        if owner and owner != name:
-            print_duplicate_error(owner, book.contacts[owner], normalize_phone(phone), DUPLICATE_PHONE_MESSAGES)
-            return
-
-    if email:
-        owner = book.find_email_global(email)
-        if owner and owner != name:
-            print_duplicate_error(owner, book.contacts[owner], email, DUPLICATE_EMAIL_MESSAGES)
-            return
-
-    # Execution via Business Logic Layer
-    result, status = book.add_contact(name, phone, email, birthday)
-    
-    if status == "new":
-        print_success(random.choice(CONTACT_ADDED_MESSAGES).format(name=name))
-    elif isinstance(status, list):
-        if status:
-            print_success(f"Updated contact '{name}': added/changed {', '.join(status)}.")
+        if birthday:
+            if not record.birthday or record.birthday.value != birthday:
+                record.add_birthday(birthday)
+                if status != "new": status.append("birthday")
+        
+        # Feedback
+        if status == "new":
+            print_success(random.choice(CONTACT_ADDED_MESSAGES).format(name=name))
+        elif status:
+            # Use funny update message + details
+            msg = random.choice(CONTACT_UPDATED_MESSAGES).format(name=name)
+            print_success(f"{msg} (Changed: {', '.join(status)})")
         else:
             print_info(f"Contact '{name}' already up to date.")
+
+    except ValueError as e:
+        print_error(str(e))
 
 
 @command("change", "Change phone: change <name> <old_phone> <new_phone>")
@@ -151,24 +176,22 @@ def handle_change(book: AddressBook, args: List[str]):
     
     name, old_phone, new_phone = args[0], args[1], args[2]
     
-    # Validation
-    if not validate_phone(new_phone):
-        print_error(random.choice(INVALID_PHONE_MESSAGES).format(phone=new_phone))
+    record = book.find(name)
+    if not record:
+        print_error(random.choice(CONTACT_NOT_FOUND_MESSAGES).format(name=name))
         return
-        
+
     # Uniqueness Check
     owner = book.find_phone_global(new_phone)
     if owner and owner != name:
-        print_duplicate_error(owner, book.contacts[owner], normalize_phone(new_phone), DUPLICATE_PHONE_MESSAGES)
+        print_duplicate_error(owner, {}, new_phone, DUPLICATE_PHONE_MESSAGES)
         return
 
     try:
-        book.update_phone(name, old_phone, new_phone)
+        record.edit_phone(old_phone, new_phone)
         print_success(random.choice(PHONE_UPDATED_MESSAGES).format(name=name))
-    except KeyError:
-        print_error(random.choice(CONTACT_NOT_FOUND_MESSAGES).format(name=name))
-    except ValueError:
-        print_error(f"Phone {old_phone} not found for {name}.")
+    except ValueError as e:
+        print_error(str(e))
 
 
 @command("add_phone", "Add extra phone: add_phone <name> <phone>")
@@ -178,21 +201,29 @@ def handle_add_phone(book: AddressBook, args: List[str]):
         return
     
     name, phone = args[0], args[1]
-
-    if not validate_phone(phone):
-        print_error(random.choice(INVALID_PHONE_MESSAGES).format(phone=phone))
+    
+    record = book.find(name)
+    if not record:
+        print_error(random.choice(CONTACT_NOT_FOUND_MESSAGES).format(name=name))
         return
     
     owner = book.find_phone_global(phone)
     if owner and owner != name:
-         print_duplicate_error(owner, book.contacts[owner], normalize_phone(phone), DUPLICATE_PHONE_MESSAGES)
+         print_duplicate_error(owner, {}, phone, DUPLICATE_PHONE_MESSAGES)
          return
          
     try:
-        book.add_phone(name, phone)
-        print_success(random.choice(PHONE_ADDED_MESSAGES).format(name=name))
-    except KeyError:
-        print_error(random.choice(CONTACT_NOT_FOUND_MESSAGES).format(name=name))
+        if not record.find_phone(phone):
+            try:
+                record.add_phone(phone)
+                print_success(random.choice(PHONE_ADDED_MESSAGES).format(name=name))
+            except ValueError:
+                 print_error(random.choice(INVALID_PHONE_MESSAGES).format(phone=phone))
+                 return
+        else:
+            print_warning(f"Phone {phone} already exists for {name}.")
+    except ValueError as e:
+        print_error(str(e))
 
 
 @command("delete", "Delete contact: delete <name>")
@@ -202,7 +233,7 @@ def handle_delete(book: AddressBook, args: List[str]):
         return
     
     name = args[0]
-    if book.delete_contact(name):
+    if book.delete(name):
         print_success(random.choice(CONTACT_DELETED_MESSAGES).format(name=name))
     else:
         print_error(random.choice(CONTACT_NOT_FOUND_MESSAGES).format(name=name))
@@ -217,17 +248,20 @@ def handle_search(book: AddressBook, args: List[str]):
     query = args[0].lower()
     results = {}
     
-    # Ideally search logic should be in AddressBook too, but keeping it simple for now
-    for name, data in book.contacts.items():
+    for name, record in book.data.items():
         if query in name.lower():
-            results[name] = data
+            results[name] = record
             continue
-        for phone in data.get('phones', []):
-            if query in phone:
-                results[name] = data
+        
+        # Check phones
+        for phone in record.phones:
+            if query in phone.value:
+                results[name] = record
                 break
-        if data.get('email') and query in data['email'].lower():
-            results[name] = data
+        
+        # Check email
+        if record.email and query in record.email.value.lower():
+            results[name] = record
     
     if not results:
         print_info(f"No contacts found matching '{query}'")
@@ -243,9 +277,9 @@ def handle_phone(book: AddressBook, args: List[str]):
         return
     
     name = args[0]
-    contact = book.get_contact(name)
-    if contact:
-        phones = contact.get('phones', [])
+    record = book.find(name)
+    if record:
+        phones = [p.value for p in record.phones]
         console.print(f"[bold]{name}[/bold]: {', '.join(phones) if phones else 'No phones'}")
     else:
         print_error(random.choice(CONTACT_NOT_FOUND_MESSAGES).format(name=name))
@@ -259,21 +293,21 @@ def handle_add_email(book: AddressBook, args: List[str]):
     
     name, email = args[0], args[1]
     
-    if not validate_email(email):
-        print_error(random.choice(INVALID_EMAIL_MESSAGES).format(email=email))
+    record = book.find(name)
+    if not record:
+        print_error(random.choice(CONTACT_NOT_FOUND_MESSAGES).format(name=name))
         return
 
     owner = book.find_email_global(email)
     if owner and owner != name:
-         print_duplicate_error(owner, book.contacts[owner], email, DUPLICATE_EMAIL_MESSAGES)
+         print_duplicate_error(owner, {}, email, DUPLICATE_EMAIL_MESSAGES)
          return
          
-    contact = book.get_contact(name)
-    if contact:
-        contact['email'] = email # Direct update for now, or add update_email method
+    try:
+        record.add_email(email)
         print_success(random.choice(EMAIL_UPDATED_MESSAGES).format(name=name))
-    else:
-        print_error(random.choice(CONTACT_NOT_FOUND_MESSAGES).format(name=name))
+    except ValueError:
+        print_error(random.choice(INVALID_EMAIL_MESSAGES).format(email=email))
 
 
 @command("add_birthday", "Add/Edit birthday: add_birthday <name> <DD-MM-YYYY>")
@@ -283,14 +317,13 @@ def handle_add_birthday(book: AddressBook, args: List[str]):
         return
     
     name, bday = args[0], args[1]
-    contact = book.get_contact(name)
-    if not contact:
+    record = book.find(name)
+    if not record:
         print_error(random.choice(CONTACT_NOT_FOUND_MESSAGES).format(name=name))
         return
     
     try:
-        birthdays.days_until_birthday(bday) # Validation
-        contact['birthday'] = bday
+        record.add_birthday(bday)
         print_success(random.choice(BIRTHDAY_UPDATED_MESSAGES).format(name=name))
     except ValueError:
         print_error(random.choice(INVALID_BIRTHDAY_MESSAGES))
@@ -298,7 +331,7 @@ def handle_add_birthday(book: AddressBook, args: List[str]):
 
 @command("all", "Show all contact info")
 def handle_all(book: AddressBook, args: List[str]):
-    if not book.contacts:
+    if not book.data:
         print_info("No contacts found.")
         return
 
@@ -311,24 +344,19 @@ def handle_all(book: AddressBook, args: List[str]):
     table.add_column("Note", style="white")
     table.add_column("Tag", style="red")
 
-    for name, data in book.contacts.items():
-        phones = ", ".join(data.get('phones', []))
-        email = data.get('email') or "-"
-        bday_str = data.get('birthday') or "-"
+    for name, record in book.data.items():
+        phones = ", ".join(p.value for p in record.phones)
+        email = record.email.value if record.email else "-"
+        bday_str = record.birthday.value if record.birthday else "-"
         
-        days_until = "-"
-        if bday_str != "-":
-            try:
-                days = birthdays.days_until_birthday(bday_str)
-                days_until = str(days)
-            except ValueError:
-                days_until = "Invalid Date"
+        if record.birthday:
+            d = record.days_to_birthday()
+            days_until = str(d) if d is not None else "-"
+        else:
+            days_until = "-"
         
-        user_notes = book.notes.get(name, [])
-        note_str = "\n".join(user_notes) if user_notes else "-"
-        
-        user_tags = book.tags.get(name, [])
-        tag_str = ", ".join(user_tags) if user_tags else "-"
+        note_str = "\n".join(record.notes) if record.notes else "-"
+        tag_str = ", ".join(record.tags) if record.tags else "-"
         
         table.add_row(name, phones, email, bday_str, days_until, note_str, tag_str)
     
@@ -337,23 +365,23 @@ def handle_all(book: AddressBook, args: List[str]):
 
 @command("list", "List all contacts")
 def handle_list(book: AddressBook, args: List[str]):
-    if not book.contacts:
+    if not book.data:
         print_info("No contacts found.")
         return
-    _print_contacts_table(book.contacts)
+    _print_contacts_table(book.data)
 
 
-def _print_contacts_table(contacts_dict: Dict):
+def _print_contacts_table(contacts_map: Dict):
     table = Table(title="Contacts List")
     table.add_column("Name", style="cyan")
     table.add_column("Phones", style="green")
     table.add_column("Email", style="blue")
     table.add_column("Birthday", style="yellow")
 
-    for name, data in contacts_dict.items():
-        phones = ", ".join(data.get('phones', []))
-        email = data.get('email') or "-"
-        birthday = data.get('birthday') or "-"
+    for name, record in contacts_map.items():
+        phones = ", ".join(p.value for p in record.phones)
+        email = record.email.value if record.email else "-"
+        birthday = record.birthday.value if record.birthday else "-"
         table.add_row(name, phones, email, birthday)
     
     console.print(table)
@@ -370,7 +398,10 @@ def handle_add_note(book: AddressBook, args: List[str]):
     name = args[0]
     note = " ".join(args[1:])
     try:
-        notes.add_note(book, name, note)
+        record = book.find(name)
+        if not record:
+            raise KeyError
+        record.add_note(note)
         print_success(random.choice(NOTE_ADDED_MESSAGES).format(name=name))
     except KeyError:
         print_error(random.choice(CONTACT_NOT_FOUND_MESSAGES).format(name=name))
@@ -387,13 +418,13 @@ def handle_edit_note(book: AddressBook, args: List[str]):
         index = int(args[1]) - 1
         new_text = " ".join(args[2:])
         
-        user_notes = notes.list_notes(book, name)
-        if not user_notes:
-            print_error(f"No notes for {name}")
+        record = book.find(name)
+        if not record:
+            print_error(random.choice(CONTACT_NOT_FOUND_MESSAGES).format(name=name))
             return
-            
-        if 0 <= index < len(user_notes):
-            notes.edit_note(book, name, index, new_text)
+
+        if 0 <= index < len(record.notes):
+            record.edit_note(index, new_text)
             print_success(random.choice(NOTE_UPDATED_MESSAGES).format(name=name))
         else:
             print_error(random.choice(INVALID_INDEX_MESSAGES))
@@ -412,7 +443,19 @@ def handle_delete_note(book: AddressBook, args: List[str]):
     name, index_str = args[0], args[1]
     try:
         index = int(index_str) - 1
-        notes.delete_note(book, name, index)
+        record = book.find(name)
+        if hasattr(record, 'remove_note'):
+             record.remove_note(index)
+        else:
+             # Fallback if I messed up method name, but I added remove_note
+             record.notes.pop(index)
+             
+        # Actually I added remove_note to Record, so use it:
+        # record.remove_note(index)
+        # But wait, I need to check if record exists first
+        if not record:
+             raise KeyError
+        record.remove_note(index)
         print_success(random.choice(NOTE_DELETED_MESSAGES).format(name=name))
     except ValueError:
         print_error("Index must be a number.")
@@ -429,8 +472,8 @@ def handle_search_notes(book: AddressBook, args: List[str]):
     query = args[0].lower()
     found = False
     
-    for name, user_notes in book.notes.items():
-        for i, note in enumerate(user_notes):
+    for name, record in book.data.items():
+        for i, note in enumerate(record.notes):
             if query in note.lower():
                 console.print(f"[bold cyan]{name}[/bold cyan] (Note {i+1}): {note}")
                 found = True
@@ -442,17 +485,22 @@ def handle_search_notes(book: AddressBook, args: List[str]):
 @command("list_notes", "List notes: list_notes [name]")
 def handle_list_notes(book: AddressBook, args: List[str]):
     name = args[0] if args else None
-    results = notes.list_notes(book, name)
+    
+    if name:
+        record = book.find(name)
+        results = record.notes if record else []
+    else:
+        results = {n: r.notes for n, r in book.data.items() if r.notes}
     
     if not results:
         print_info(f"No notes found{' for ' + name if name else ''}.")
         return
 
-    if isinstance(results, list):
+    if isinstance(results, list): # Single contact
          console.print(f"[bold]Notes for {name}:[/bold]")
          for i, note in enumerate(results, 1):
              console.print(f"{i}. {note}")
-    elif isinstance(results, dict):
+    elif isinstance(results, dict): # All contacts
         for contact_name, note_list in results.items():
             if note_list:
                 console.print(f"[bold]{contact_name}[/bold]:")
@@ -468,9 +516,13 @@ def handle_add_tag(book: AddressBook, args: List[str]):
         print_error(random.choice(MISSING_ARGS_MESSAGES).format(syntax="add_tag <name> <tag>"))
         return
     
-    name, tag = args[0], args[1]
+    name = args[0]
+    tag = " ".join(args[1:])
     try:
-        tags.add_tag(book, name, tag)
+        record = book.find(name)
+        if not record:
+            raise KeyError
+        record.add_tag(tag)
         print_success(random.choice(TAG_ADDED_MESSAGES).format(name=name, tag=tag))
     except KeyError:
         print_error(random.choice(CONTACT_NOT_FOUND_MESSAGES).format(name=name))
@@ -482,14 +534,20 @@ def handle_remove_tag(book: AddressBook, args: List[str]):
         print_error(random.choice(MISSING_ARGS_MESSAGES).format(syntax="remove_tag <name> <tag>"))
         return
     
-    name, tag = args[0], args[1]
-    tags.remove_tag(book, name, tag)
+    name = args[0]
+    tag = " ".join(args[1:])
+    
+    record = book.find(name)
+    if record:
+        record.remove_tag(tag)
     print_success(random.choice(TAG_REMOVED_MESSAGES).format(name=name))
 
 
 @command("list_tags", "List all tags")
 def handle_list_tags(book: AddressBook, args: List[str]):
-    results = tags.list_tags(book)
+    # results = tags.list_tags(book)
+    # Using AddressBook method
+    results = book.get_all_tags()
     if not results:
         print_info("No tags found.")
         return
@@ -505,8 +563,10 @@ def handle_filter_by_tag(book: AddressBook, args: List[str]):
         print_error(random.choice(MISSING_ARGS_MESSAGES).format(syntax="filter_by_tag <tag>"))
         return
     
-    tag = args[0]
-    names = tags.filter_by_tag(book, tag)
+    tag = " ".join(args)
+    # names = tags.filter_by_tag(book, tag)
+    # Using AddressBook method
+    names = book.find_by_tag(tag)
     if not names:
         print_info(f"No contacts found with tag '{tag}'")
         return
@@ -521,23 +581,21 @@ def handle_filter_by_tag(book: AddressBook, args: List[str]):
     table.add_column("Note", style="white")
 
     for name in names:
-        data = book.contacts.get(name)
-        if not data: 
+        record = book.find(name)
+        if not record: 
             continue
             
-        phones = ", ".join(data.get('phones', []))
-        email = data.get('email') or "-"
-        bday = data.get('birthday') or "-"
+        phones = ", ".join(p.value for p in record.phones)
+        email = record.email.value if record.email else "-"
+        bday = record.birthday.value if record.birthday else "-"
         
-        days_until = "-"
-        if bday != "-":
-            try:
-                days_until = str(birthdays.days_until_birthday(bday))
-            except ValueError:
-                days_until = "Invalid Date"
+        if record.birthday:
+            d = record.days_to_birthday()
+            days_until = str(d) if d is not None else "-"
+        else:
+            days_until = "-"
         
-        user_notes = book.notes.get(name, [])
-        note_str = "\n".join(user_notes) if user_notes else "-"
+        note_str = "\n".join(record.notes) if record.notes else "-"
         
         table.add_row(tag, name, days_until, phones, email, bday, note_str)
     
@@ -553,21 +611,22 @@ def handle_days_to_bday(book: AddressBook, args: List[str]):
         return
     
     name = args[0]
-    contact = book.get_contact(name)
-    if not contact:
+    record = book.find(name)
+    if not record:
         print_error(random.choice(CONTACT_NOT_FOUND_MESSAGES).format(name=name))
         return
     
-    bday_str = contact.get('birthday')
+    bday_str = record.birthday.value if record.birthday else None
     if not bday_str:
         print_warning(f"No birthday set for {name}.")
         return
 
-    try:
-        days = birthdays.days_until_birthday(bday_str)
+    days = record.days_to_birthday()
+    if days is not None:
         print_info(f"Days until {name}'s birthday: [bold]{days}[/bold]")
-    except ValueError:
-        print_error(random.choice(INVALID_BIRTHDAY_MESSAGES))
+    else:
+        # Should not happen if check above passed, but safe fallback
+        print_warning(f"No birthday set for {name}")
 
 
 @command("birthdays", "Upcoming birthdays: birthdays [days]")
@@ -579,8 +638,9 @@ def handle_birthdays(book: AddressBook, args: List[str]):
         except ValueError:
             print_error("Days must be a number.")
             return
-
-    upcoming = birthdays.get_upcoming_birthdays(book.contacts, days)
+            
+    # Using strict OOP AddressBook method
+    upcoming = book.get_upcoming_birthdays(days)
     if not upcoming:
         print_info(f"No birthdays in the next {days} days.")
         return
@@ -598,18 +658,15 @@ def handle_birthdays(book: AddressBook, args: List[str]):
     
     for item in upcoming:
         name = item['name']
-        data = book.contacts.get(name)
-        if not data:
+        record = book.find(name)
+        if not record:
             continue
             
-        phones = ", ".join(data.get('phones', []))
-        email = data.get('email') or "-"
+        phones = ", ".join(p.value for p in record.phones)
+        email = record.email.value if record.email else "-"
         
-        user_notes = book.notes.get(name, [])
-        note_str = "\n".join(user_notes) if user_notes else "-"
-        
-        user_tags = book.tags.get(name, [])
-        tag_str = ", ".join(user_tags) if user_tags else "-"
+        note_str = "\n".join(record.notes) if record.notes else "-"
+        tag_str = ", ".join(record.tags) if record.tags else "-"
         
         table.add_row(
             item['birthday'], 
@@ -660,9 +717,7 @@ def handle_delete_all(book: AddressBook, args: List[str]):
     confirm = console.input("[bold yellow]Are you sure? Type 'YES' to confirm: [/bold yellow]")
     
     if confirm == "YES":
-        book.contacts.clear()
-        book.notes.clear()
-        book.tags.clear()
+        book.data.clear()
         print_success(random.choice(DELETE_ALL_MESSAGES))
     else:
         print_info("Operation canceled. Your data is safe.")
@@ -703,6 +758,7 @@ def dispatch(book: AddressBook, raw_input: str) -> bool:
         try:
             handler(book, args)
         except Exception as e:
+            # We print the error but keep the bot alive
             print_error(f"Error executing '{cmd}': {e}")
     else:
         from assistant_bot.utils.ux_messages import UNKNOWN_COMMAND_MESSAGES

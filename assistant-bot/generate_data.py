@@ -17,27 +17,35 @@ FIRST_NAMES = [
     "Ivan", "Jack", "Kathy", "Leo", "Mike", "Nina", "Oscar", "Paul", "Quinn", "Rose",
     "Steve", "Tom", "Uma", "Victor", "Wendy", "Xander", "Yara", "Zack",
     "Liam", "Noah", "Oliver", "Elijah", "James", "William", "Benjamin", "Lucas",
-    "Henry", "Alexander", "Mason", "Michael", "Ethan", "Daniel", "Jacob", "Logan"
+    "Henry", "Alexander", "Mason", "Michael", "Ethan", "Daniel", "Jacob", "Logan",
+    "Sophia", "Emma", "Olivia", "Ava", "Isabella", "Mia", "Amelia", "Harper",
+    "Evelyn", "Abigail", "Emily", "Ella", "Scarlett", "Victoria", "Aria",
+    "Samuel", "Joseph", "Matthew", "Andrew", "Joshua", "Christopher", "Ryan",
+    "Nathan", "Aaron", "Caleb", "Dylan", "Isaac", "Julian", "Sebastian"
 ]
 
 LAST_NAMES = [
     "Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller", "Davis",
     "Rodriguez", "Martinez", "Hernandez", "Lopez", "Gonzalez", "Wilson", "Anderson",
     "Thomas", "Taylor", "Moore", "Jackson", "Martin", "Lee", "Perez", "Thompson",
-    "White", "Harris", "Sanchez", "Clark", "Ramirez", "Lewis", "Robinson"
+    "White", "Harris", "Sanchez", "Clark", "Ramirez", "Lewis", "Robinson",
+    "Walker", "Young", "Allen", "King", "Wright", "Scott", "Torres", "Nguyen",
+    "Hill", "Flores", "Green", "Adams", "Nelson", "Baker", "Hall",
+    "Rivera", "Campbell", "Mitchell", "Carter", "Roberts", "Gomez",
+    "Phillips", "Evans", "Turner", "Diaz", "Parker", "Cruz", "Edwards"
 ]
 
 NOTES_LONG = [
-    "Loves watching psychological thrillers like Shutter Island and Inception. Also a huge fan of Christopher Nolan.",
-    "Favorite color is azure blue. Obsessed with 80s synth-pop bands like Depeche Mode and New Order.",
-    "Prefers single malt scotch, specifically Lagavulin 16. Hates gin. Can talk about whiskey for hours.",
-    "Die-hard fan of The Beatles using vinyl only. Argues that Abbey Road is their best album.",
-    "Passionate about gardening, especially growing exotic orchids. Has a greenhouse in the backyard.",
-    "Collecting vintage cameras from the 1960s. Favorite model is the Leica M3. Does darkroom development.",
-    "Huge fan of Italian cuisine. Makes homemade pasta every Sunday. Secret ingredient is nutmeg in bolognese.",
-    "Reads everything by Stephen King. Has a first edition of The Shining. terrifying but good.",
-    "Loves hiking in the Swiss Alps. Visited Zermatt three times. Favorite peak is the Matterhorn.",
-    "Obsessed with specialty coffee. Roasts their own beans at home using Ethiopian Yirgacheffe."
+    "Enjoys psychological thrillers like Shutter Island and Inception. Big fan of Christopher Nolan.",
+    "Favorite color is azure blue. Loves 80s synth-pop, especially Depeche Mode.",
+    "Prefers single malt scotch, especially Lagavulin 16. Strong dislike for gin.",
+    "Dedicated Beatles fan who listens only on vinyl. Considers Abbey Road their best work.",
+    "Passionate about gardening and growing exotic orchids. Maintains a small greenhouse.",
+    "Collects vintage cameras from the 1960s, especially Leica models. Practices darkroom development.",
+    "Loves Italian cuisine and makes homemade pasta regularly. Enjoys experimenting with recipes.",
+    "Avid Stephen King reader and collector. Owns a first edition of The Shining.",
+    "Enjoys hiking in the Swiss Alps and has visited Zermatt multiple times.",
+    "Passionate about specialty coffee and roasts Ethiopian beans at home."
 ]
 
 NOTES_SHORT = [
@@ -47,14 +55,25 @@ NOTES_SHORT = [
 ]
 
 DOMAINS = [
-    "gmail.com", "yahoo.com", "outlook.com", "hotmail.com", 
-    "icloud.com", "ukr.net", "proton.me", "aol.com"
+    "gmail.com", "yahoo.com", "outlook.com", "hotmail.com",
+    "icloud.com", "ukr.net", "proton.me", "aol.com",
+    "live.com", "msn.com", "zoho.com", "mail.com", "yandex.com",
+    "pm.me", "tutanota.com", "gmx.com",
+    "protonmail.com", "fastmail.com", "hey.com", "inbox.com",
+    "orange.fr", "bluewin.ch", "web.de"
 ]
 
 PREFIXES = [
-    "050", "066", "095", "099", # Vodafone
-    "067", "068", "096", "097", "098", # Kyivstar
-    "063", "093", "073" # Lifecell
+    "050", "066", "095", "099",
+    "067", "068", "096", "097", "098",
+    "063", "093", "073",
+
+    # added – additional valid Ukrainian ranges
+    "091",  # 3Mob
+    "092",  # PEOPLEnet
+    "094",  # Intertelecom (legacy but still встречается в данных)
+    "089",  # Lycamobile Ukraine
+    "090"   # corporate / MVNO
 ]
 
 
