@@ -1,19 +1,37 @@
+import os
+import sys
+
+# Ensure the package is in the python path if running from root
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 from assistant_bot import storage
 from assistant_bot.app import App
-from assistant_bot.utils.ux_messages import WELCOME_MESSAGES, GOODBYE_MESSAGES
+from assistant_bot.utils.ux_messages import GOODBYE_MESSAGES
 
 
-def main():
-    # Load or create AddressBook
-    address_book = storage.load_address_book()
+def main() -> None:
+    """
+    Main entry point for the Assistant Bot application.
+    Handles data loading, application lifecycle, and clean shutdown.
+    """
+    # 1. Load Data (Pickle with JSON fallback)
+    address_book = storage.load_pickle()
+    
+    if address_book is None:
+        address_book = storage.load_address_book()
+        
+    # 2. Strict Sync (Ensure all formats are consistent on startup)
+    storage.save_all(address_book)
 
+    # 3. Application Loop
     app = App(address_book)
     try:
         app.run()
     except (KeyboardInterrupt, SystemExit):
         pass
     finally:
-        storage.save_address_book(address_book)
+        # 4. Save & Exit
+        storage.save_all(address_book)
         print(GOODBYE_MESSAGES[0])
 
 

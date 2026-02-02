@@ -1,7 +1,7 @@
 import shlex
 import random
 from functools import wraps
-from typing import Callable, List, Dict, Optional, Tuple
+from typing import Callable, List, Dict, Optional, Tuple, Any
 
 from rich.table import Table
 from rich.panel import Panel
@@ -10,9 +10,13 @@ from rich.align import Align
 
 from assistant_bot.config import DEFAULT_BIRTHDAY_LOOKAHEAD_DAYS
 from assistant_bot.models import AddressBook, Record
-from assistant_bot.utils.console import console, print_error, print_success, print_info, print_warning, print_duplicate_error
+from assistant_bot.utils.console import (
+    console, print_error, print_success, print_info, 
+    print_warning, print_duplicate_error
+)
 from assistant_bot.utils.validators import validate_phone, validate_email, normalize_phone
-from assistant_bot.features import import_export
+from assistant_bot import import_export
+from assistant_bot import storage
 from assistant_bot.utils.ux_messages import (
     UNKNOWN_COMMAND_MESSAGES, MISSING_ARGS_MESSAGES,
     CONTACT_ADDED_MESSAGES, CONTACT_UPDATED_MESSAGES, PHONE_ADDED_MESSAGES,
@@ -26,12 +30,12 @@ from assistant_bot.utils.ux_messages import (
 )
 
 # Registry for commands.
-COMMAND_REGISTRY: Dict[str, Tuple[Callable, str]] = {}
+COMMAND_REGISTRY: Dict[str, Tuple[Callable[..., Any], str]] = {}
 
 
-def command(name: str, help_text: str = ""):
+def command(name: str, help_text: str = "") -> Callable:
     """Decorator to register a bot command."""
-    def decorator(func: Callable):
+    def decorator(func: Callable) -> Callable:
         COMMAND_REGISTRY[name] = (func, help_text)
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -43,7 +47,7 @@ def command(name: str, help_text: str = ""):
 # --- Command Handlers ---
 
 @command("help", "Show available commands")
-def handle_help(book: AddressBook, args: List[str]):
+def handle_help(book: AddressBook, args: List[str]) -> None:
     """Displays commands grouped by category."""
     
     categories = {
@@ -100,7 +104,7 @@ def handle_help(book: AddressBook, args: List[str]):
 # --- CONTACT MANAGEMENT ---
 
 @command("add", "Add contact: add <name> [phone] [email] [birthday]")
-def handle_add(book: AddressBook, args: List[str]):
+def handle_add(book: AddressBook, args: List[str]) -> None:
     if not args:
         print_error(random.choice(MISSING_ARGS_MESSAGES).format(syntax="add <name> [phone] [email] [birthday]"))
         return
@@ -121,7 +125,7 @@ def handle_add(book: AddressBook, args: List[str]):
             status = "new"
         
         if phone:
-            # Check global unique
+            # Check global uniqueness
             owner = book.find_phone_global(phone)
             if owner and owner != name:
                 print_duplicate_error(owner, {}, phone, DUPLICATE_PHONE_MESSAGES)
@@ -158,18 +162,20 @@ def handle_add(book: AddressBook, args: List[str]):
         if status == "new":
             print_success(random.choice(CONTACT_ADDED_MESSAGES).format(name=name))
         elif status:
-            # Use funny update message + details
             msg = random.choice(CONTACT_UPDATED_MESSAGES).format(name=name)
             print_success(f"{msg} (Changed: {', '.join(status)})")
         else:
             print_info(f"Contact '{name}' already up to date.")
+            
+        # Strict Sync Trigger
+        storage.save_all(book)
 
     except ValueError as e:
         print_error(str(e))
 
 
 @command("change", "Change phone: change <name> <old_phone> <new_phone>")
-def handle_change(book: AddressBook, args: List[str]):
+def handle_change(book: AddressBook, args: List[str]) -> None:
     if len(args) < 3:
         print_error(random.choice(MISSING_ARGS_MESSAGES).format(syntax="change <name> <old_phone> <new_phone>"))
         return
@@ -190,12 +196,13 @@ def handle_change(book: AddressBook, args: List[str]):
     try:
         record.edit_phone(old_phone, new_phone)
         print_success(random.choice(PHONE_UPDATED_MESSAGES).format(name=name))
+        storage.save_all(book) 
     except ValueError as e:
         print_error(str(e))
 
 
 @command("add_phone", "Add extra phone: add_phone <name> <phone>")
-def handle_add_phone(book: AddressBook, args: List[str]):
+def handle_add_phone(book: AddressBook, args: List[str]) -> None:
     if len(args) < 2:
         print_error(random.choice(MISSING_ARGS_MESSAGES).format(syntax="add_phone <name> <phone>"))
         return
@@ -217,6 +224,7 @@ def handle_add_phone(book: AddressBook, args: List[str]):
             try:
                 record.add_phone(phone)
                 print_success(random.choice(PHONE_ADDED_MESSAGES).format(name=name))
+                storage.save_all(book)
             except ValueError:
                  print_error(random.choice(INVALID_PHONE_MESSAGES).format(phone=phone))
                  return
@@ -227,7 +235,7 @@ def handle_add_phone(book: AddressBook, args: List[str]):
 
 
 @command("delete", "Delete contact: delete <name>")
-def handle_delete(book: AddressBook, args: List[str]):
+def handle_delete(book: AddressBook, args: List[str]) -> None:
     if not args:
         print_error(random.choice(MISSING_ARGS_MESSAGES).format(syntax="delete <name>"))
         return
@@ -235,12 +243,13 @@ def handle_delete(book: AddressBook, args: List[str]):
     name = args[0]
     if book.delete(name):
         print_success(random.choice(CONTACT_DELETED_MESSAGES).format(name=name))
+        storage.save_all(book)
     else:
         print_error(random.choice(CONTACT_NOT_FOUND_MESSAGES).format(name=name))
 
 
 @command("search", "Search contacts: search <query>")
-def handle_search(book: AddressBook, args: List[str]):
+def handle_search(book: AddressBook, args: List[str]) -> None:
     if not args:
         print_error(random.choice(MISSING_ARGS_MESSAGES).format(syntax="search <query>"))
         return
@@ -249,6 +258,7 @@ def handle_search(book: AddressBook, args: List[str]):
     results = {}
     
     for name, record in book.data.items():
+        # Check name
         if query in name.lower():
             results[name] = record
             continue
@@ -271,7 +281,7 @@ def handle_search(book: AddressBook, args: List[str]):
 
 
 @command("phone", "Show phones: phone <name>")
-def handle_phone(book: AddressBook, args: List[str]):
+def handle_phone(book: AddressBook, args: List[str]) -> None:
     if not args:
         print_error(random.choice(MISSING_ARGS_MESSAGES).format(syntax="phone <name>"))
         return
@@ -286,7 +296,7 @@ def handle_phone(book: AddressBook, args: List[str]):
 
 
 @command("add_email", "Add/Edit email: add_email <name> <email>")
-def handle_add_email(book: AddressBook, args: List[str]):
+def handle_add_email(book: AddressBook, args: List[str]) -> None:
     if len(args) < 2:
         print_error(random.choice(MISSING_ARGS_MESSAGES).format(syntax="add_email <name> <email>"))
         return
@@ -306,12 +316,13 @@ def handle_add_email(book: AddressBook, args: List[str]):
     try:
         record.add_email(email)
         print_success(random.choice(EMAIL_UPDATED_MESSAGES).format(name=name))
+        storage.save_all(book)
     except ValueError:
         print_error(random.choice(INVALID_EMAIL_MESSAGES).format(email=email))
 
 
 @command("add_birthday", "Add/Edit birthday: add_birthday <name> <DD-MM-YYYY>")
-def handle_add_birthday(book: AddressBook, args: List[str]):
+def handle_add_birthday(book: AddressBook, args: List[str]) -> None:
     if len(args) < 2:
         print_error(random.choice(MISSING_ARGS_MESSAGES).format(syntax="add_birthday <name> <date>"))
         return
@@ -325,12 +336,13 @@ def handle_add_birthday(book: AddressBook, args: List[str]):
     try:
         record.add_birthday(bday)
         print_success(random.choice(BIRTHDAY_UPDATED_MESSAGES).format(name=name))
+        storage.save_all(book)
     except ValueError:
         print_error(random.choice(INVALID_BIRTHDAY_MESSAGES))
 
 
 @command("all", "Show all contact info")
-def handle_all(book: AddressBook, args: List[str]):
+def handle_all(book: AddressBook, args: List[str]) -> None:
     if not book.data:
         print_info("No contacts found.")
         return
@@ -364,14 +376,14 @@ def handle_all(book: AddressBook, args: List[str]):
 
 
 @command("list", "List all contacts")
-def handle_list(book: AddressBook, args: List[str]):
+def handle_list(book: AddressBook, args: List[str]) -> None:
     if not book.data:
         print_info("No contacts found.")
         return
     _print_contacts_table(book.data)
 
 
-def _print_contacts_table(contacts_map: Dict):
+def _print_contacts_table(contacts_map: Dict) -> None:
     table = Table(title="Contacts List")
     table.add_column("Name", style="cyan")
     table.add_column("Phones", style="green")
@@ -390,7 +402,7 @@ def _print_contacts_table(contacts_map: Dict):
 # --- NOTES MANAGEMENT ---
 
 @command("add_note", "Add note: add_note <name> <text>")
-def handle_add_note(book: AddressBook, args: List[str]):
+def handle_add_note(book: AddressBook, args: List[str]) -> None:
     if len(args) < 2:
         print_error(random.choice(MISSING_ARGS_MESSAGES).format(syntax="add_note <name> <text>"))
         return
@@ -403,12 +415,13 @@ def handle_add_note(book: AddressBook, args: List[str]):
             raise KeyError
         record.add_note(note)
         print_success(random.choice(NOTE_ADDED_MESSAGES).format(name=name))
+        storage.save_all(book)
     except KeyError:
         print_error(random.choice(CONTACT_NOT_FOUND_MESSAGES).format(name=name))
 
 
 @command("edit_note", "Edit note: edit_note <name> <index> <new_text>")
-def handle_edit_note(book: AddressBook, args: List[str]):
+def handle_edit_note(book: AddressBook, args: List[str]) -> None:
     if len(args) < 3:
         print_error(random.choice(MISSING_ARGS_MESSAGES).format(syntax="edit_note <name> <index> <new_text>"))
         return
@@ -426,6 +439,7 @@ def handle_edit_note(book: AddressBook, args: List[str]):
         if 0 <= index < len(record.notes):
             record.edit_note(index, new_text)
             print_success(random.choice(NOTE_UPDATED_MESSAGES).format(name=name))
+            storage.save_all(book)
         else:
             print_error(random.choice(INVALID_INDEX_MESSAGES))
     except ValueError:
@@ -435,7 +449,7 @@ def handle_edit_note(book: AddressBook, args: List[str]):
 
 
 @command("delete_note", "Delete note: delete_note <name> <index>")
-def handle_delete_note(book: AddressBook, args: List[str]):
+def handle_delete_note(book: AddressBook, args: List[str]) -> None:
     if len(args) < 2:
         print_error(random.choice(MISSING_ARGS_MESSAGES).format(syntax="delete_note <name> <index>"))
         return
@@ -444,27 +458,26 @@ def handle_delete_note(book: AddressBook, args: List[str]):
     try:
         index = int(index_str) - 1
         record = book.find(name)
+        
+        if not record:
+             raise KeyError
+        
+        # Use remove_note if available, otherwise pop
         if hasattr(record, 'remove_note'):
              record.remove_note(index)
         else:
-             # Fallback if I messed up method name, but I added remove_note
              record.notes.pop(index)
-             
-        # Actually I added remove_note to Record, so use it:
-        # record.remove_note(index)
-        # But wait, I need to check if record exists first
-        if not record:
-             raise KeyError
-        record.remove_note(index)
+        
         print_success(random.choice(NOTE_DELETED_MESSAGES).format(name=name))
+        storage.save_all(book)
     except ValueError:
         print_error("Index must be a number.")
-    except Exception:
+    except (KeyError, IndexError):
          print_error("Could not delete note. Check contact and index.")
 
 
 @command("search_notes", "Search notes: search_notes <query>")
-def handle_search_notes(book: AddressBook, args: List[str]):
+def handle_search_notes(book: AddressBook, args: List[str]) -> None:
     if not args:
         print_error(random.choice(MISSING_ARGS_MESSAGES).format(syntax="search_notes <query>"))
         return
@@ -483,7 +496,7 @@ def handle_search_notes(book: AddressBook, args: List[str]):
 
 
 @command("list_notes", "List notes: list_notes [name]")
-def handle_list_notes(book: AddressBook, args: List[str]):
+def handle_list_notes(book: AddressBook, args: List[str]) -> None:
     name = args[0] if args else None
     
     if name:
@@ -511,7 +524,7 @@ def handle_list_notes(book: AddressBook, args: List[str]):
 # --- TAGS MANAGEMENT ---
 
 @command("add_tag", "Add tag: add_tag <name> <tag>")
-def handle_add_tag(book: AddressBook, args: List[str]):
+def handle_add_tag(book: AddressBook, args: List[str]) -> None:
     if len(args) < 2:
         print_error(random.choice(MISSING_ARGS_MESSAGES).format(syntax="add_tag <name> <tag>"))
         return
@@ -524,12 +537,13 @@ def handle_add_tag(book: AddressBook, args: List[str]):
             raise KeyError
         record.add_tag(tag)
         print_success(random.choice(TAG_ADDED_MESSAGES).format(name=name, tag=tag))
+        storage.save_all(book)
     except KeyError:
         print_error(random.choice(CONTACT_NOT_FOUND_MESSAGES).format(name=name))
 
 
 @command("remove_tag", "Remove tag: remove_tag <name> <tag>")
-def handle_remove_tag(book: AddressBook, args: List[str]):
+def handle_remove_tag(book: AddressBook, args: List[str]) -> None:
     if len(args) < 2:
         print_error(random.choice(MISSING_ARGS_MESSAGES).format(syntax="remove_tag <name> <tag>"))
         return
@@ -540,13 +554,12 @@ def handle_remove_tag(book: AddressBook, args: List[str]):
     record = book.find(name)
     if record:
         record.remove_tag(tag)
+        storage.save_all(book)
     print_success(random.choice(TAG_REMOVED_MESSAGES).format(name=name))
 
 
 @command("list_tags", "List all tags")
-def handle_list_tags(book: AddressBook, args: List[str]):
-    # results = tags.list_tags(book)
-    # Using AddressBook method
+def handle_list_tags(book: AddressBook, args: List[str]) -> None:
     results = book.get_all_tags()
     if not results:
         print_info("No tags found.")
@@ -558,14 +571,12 @@ def handle_list_tags(book: AddressBook, args: List[str]):
 
 
 @command("filter_by_tag", "Find contacts by tag: filter_by_tag <tag>")
-def handle_filter_by_tag(book: AddressBook, args: List[str]):
+def handle_filter_by_tag(book: AddressBook, args: List[str]) -> None:
     if not args:
         print_error(random.choice(MISSING_ARGS_MESSAGES).format(syntax="filter_by_tag <tag>"))
         return
     
     tag = " ".join(args)
-    # names = tags.filter_by_tag(book, tag)
-    # Using AddressBook method
     names = book.find_by_tag(tag)
     if not names:
         print_info(f"No contacts found with tag '{tag}'")
@@ -605,7 +616,7 @@ def handle_filter_by_tag(book: AddressBook, args: List[str]):
 # --- BIRTHDAYS ---
 
 @command("days_to_bday", "Days until birthday (one contact)")
-def handle_days_to_bday(book: AddressBook, args: List[str]):
+def handle_days_to_bday(book: AddressBook, args: List[str]) -> None:
     if not args:
         print_error(random.choice(MISSING_ARGS_MESSAGES).format(syntax="days_to_bday <name>"))
         return
@@ -625,12 +636,11 @@ def handle_days_to_bday(book: AddressBook, args: List[str]):
     if days is not None:
         print_info(f"Days until {name}'s birthday: [bold]{days}[/bold]")
     else:
-        # Should not happen if check above passed, but safe fallback
         print_warning(f"No birthday set for {name}")
 
 
 @command("birthdays", "Upcoming birthdays: birthdays [days]")
-def handle_birthdays(book: AddressBook, args: List[str]):
+def handle_birthdays(book: AddressBook, args: List[str]) -> None:
     days = DEFAULT_BIRTHDAY_LOOKAHEAD_DAYS
     if args:
         try:
@@ -639,7 +649,6 @@ def handle_birthdays(book: AddressBook, args: List[str]):
             print_error("Days must be a number.")
             return
             
-    # Using strict OOP AddressBook method
     upcoming = book.get_upcoming_birthdays(days)
     if not upcoming:
         print_info(f"No birthdays in the next {days} days.")
@@ -684,7 +693,7 @@ def handle_birthdays(book: AddressBook, args: List[str]):
 # --- IMPORT/EXPORT ---
 
 @command("import", "Import data: import <file.json|csv>")
-def handle_import(book: AddressBook, args: List[str]):
+def handle_import(book: AddressBook, args: List[str]) -> None:
     if not args:
         print_error(random.choice(MISSING_ARGS_MESSAGES).format(syntax="import <path>"))
         return
@@ -698,7 +707,7 @@ def handle_import(book: AddressBook, args: List[str]):
 
 
 @command("export", "Export data: export <file.json|csv>")
-def handle_export(book: AddressBook, args: List[str]):
+def handle_export(book: AddressBook, args: List[str]) -> None:
     if not args:
         print_error(random.choice(MISSING_ARGS_MESSAGES).format(syntax="export <path>"))
         return
@@ -712,23 +721,24 @@ def handle_export(book: AddressBook, args: List[str]):
 
 
 @command("delete_all", "Delete ALL content: delete_all")
-def handle_delete_all(book: AddressBook, args: List[str]):
+def handle_delete_all(book: AddressBook, args: List[str]) -> None:
     console.print("[bold red]⚠️  WARNING: This will delete ALL contacts, notes, and tags![/bold red]")
     confirm = console.input("[bold yellow]Are you sure? Type 'YES' to confirm: [/bold yellow]")
     
     if confirm == "YES":
         book.data.clear()
         print_success(random.choice(DELETE_ALL_MESSAGES))
+        storage.save_all(book)
     else:
         print_info("Operation canceled. Your data is safe.")
 
 
 @command("exit", "Exit the application")
-def handle_exit(book: AddressBook, args: List[str]):
+def handle_exit(book: AddressBook, args: List[str]) -> None:
     pass
 
 @command("close", "Exit the application")
-def handle_close(book: AddressBook, args: List[str]):
+def handle_close(book: AddressBook, args: List[str]) -> None:
     pass
 
 
@@ -761,7 +771,6 @@ def dispatch(book: AddressBook, raw_input: str) -> bool:
             # We print the error but keep the bot alive
             print_error(f"Error executing '{cmd}': {e}")
     else:
-        from assistant_bot.utils.ux_messages import UNKNOWN_COMMAND_MESSAGES
         msg = random.choice(UNKNOWN_COMMAND_MESSAGES).format(cmd=cmd)
         print_error(msg)
     

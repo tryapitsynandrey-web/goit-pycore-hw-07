@@ -1,33 +1,32 @@
-# Python
+# --- OS / System ---
+.DS_Store
+
+# --- Python ---
 __pycache__/
 *.py[cod]
 *$py.class
 
-# Distribution / packaging
-dist/
-build/
-*.egg-info/
-
-# Environments
+# --- Environments ---
 .env
 .venv
 env/
 venv/
 ENV/
-env.bak/
-venv.bak/
 
-# IDES
+# --- Distribution ---
+dist/
+build/
+*.egg-info/
+
+# --- IDEs ---
 .idea/
 .vscode/
 
-# Local data
+# --- Project Data & Logs ---
 user_address_book/
-contacts_export.json
 *.log
-
-# Data files
 *.json
 *.csv
+*.pkl
 
 

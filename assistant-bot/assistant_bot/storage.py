@@ -1,10 +1,26 @@
 import os
 import json
-from typing import Dict, Any, List
+import pickle
+from typing import Optional, Dict, Any, List
 
-from assistant_bot.config import JSON_STORAGE_PATH, CSV_STORAGE_PATH, DATA_DIR
+from assistant_bot.config import (
+    JSON_STORAGE_PATH, 
+    CSV_STORAGE_PATH, 
+    PICKLE_STORAGE_PATH, 
+    DATA_DIR
+)
 from assistant_bot.models import AddressBook, Record
 from assistant_bot.utils.console import print_info
+from assistant_bot.import_export import export_file
+
+__all__ = [
+    "load_address_book", 
+    "save_address_book", 
+    "load_pickle", 
+    "save_pickle", 
+    "save_all"
+]
+
 
 def load_address_book() -> AddressBook:
     """
@@ -21,21 +37,8 @@ def load_address_book() -> AddressBook:
         with open(JSON_STORAGE_PATH, 'r', encoding='utf-8') as f:
             raw_data = json.load(f)
 
-        # Check for legacy format (dict with 'contacts' key) vs new format (dict of records)
-        # We assume the new format will simply be the UserDict dump (keys are names, values are dicts of record data)
-        # But wait, UserDict serialization usually requires custom encoding/decoding. 
-        # We will standardize on saving a DICT where keys=names, values=Record.to_dict() equivalent.
-        
-        # Scenario 1: Legacy Format (Previous Refactor)
-        # Structure was {name: {phones:[], email:..., notes:[], tags:[]}} (from the recent refactor)
-        # Or even older: {contacts:{}, notes:{}, tags:{}} (from the very first version)
-        
-        # Let's handle the most recent "clean JSON" format we created:
-        # { "Bob": { "phones": [...], "email": "...", "notes": [...], "tags": [...] } }
-        
         if isinstance(raw_data, dict):
              for name, data in raw_data.items():
-                 # Handle potentially mixed formats if any
                  if not isinstance(data, dict):
                      continue
                  
@@ -56,7 +59,7 @@ def load_address_book() -> AddressBook:
                      if bday:
                          record.add_birthday(bday)
                          
-                     # Notes (Supported from both flat record and split architecture)
+                     # Notes
                      notes = data.get('notes', [])
                      for n in notes:
                          record.add_note(n)
@@ -76,12 +79,15 @@ def load_address_book() -> AddressBook:
     return book
 
 
-def save_address_book(book: AddressBook) -> None:
+def save_address_book(book: AddressBook, path: str = JSON_STORAGE_PATH) -> None:
     """
     Saves AddressBook to JSON storage.
     Serializes Record objects to dictionaries.
     """
-    os.makedirs(DATA_DIR, exist_ok=True)
+    if path != JSON_STORAGE_PATH:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+    else:
+        os.makedirs(DATA_DIR, exist_ok=True)
     
     save_data = {}
     
@@ -96,18 +102,57 @@ def save_address_book(book: AddressBook) -> None:
         save_data[name] = record_data
         
     try:
-        with open(JSON_STORAGE_PATH, 'w', encoding='utf-8') as f:
+        with open(path, 'w', encoding='utf-8') as f:
             json.dump(save_data, f, ensure_ascii=False, indent=2)
-            
-        # Optional: CSV backup
-        # Requires adapting existing import_export if we want to keep it
-        pass 
-        
     except Exception as e:
         print(f"Error saving data: {e}")
 
-# Backwards compatibility aliases
-def load(): return load_address_book()
-def save(ab): save_address_book(ab)
 
-__all__ = ["load_address_book", "save_address_book"]
+def load_pickle() -> Optional[AddressBook]:
+    """
+    Loads AddressBook from pickle file.
+    Returns AddressBook or None if failed/missing.
+    """
+    if not os.path.exists(PICKLE_STORAGE_PATH):
+        return None
+        
+    try:
+        with open(PICKLE_STORAGE_PATH, 'rb') as f:
+            return pickle.load(f)
+    except (FileNotFoundError, EOFError, pickle.UnpicklingError) as e:
+        print(f"Warning: Failed to load pickle (starting fresh/legacy): {e}")
+        return None
+
+
+def save_pickle(book: AddressBook, path: str = PICKLE_STORAGE_PATH) -> None:
+    """
+    Saves AddressBook to pickle file.
+    """
+    if path != PICKLE_STORAGE_PATH:
+         os.makedirs(os.path.dirname(path), exist_ok=True)
+         
+    try:
+        with open(path, 'wb') as f:
+            pickle.dump(book, f)
+    except Exception as e:
+        print(f"Error saving pickle data: {e}")
+
+
+def save_all(book: AddressBook) -> None:
+    """
+    Strictly synchronizes AddressBook state across all formats:
+    - JSON (Legacy/Human Readable)
+    - PKL (Persistence)
+    - CSV (Export/Backup)
+    """
+    # 1. Save JSON
+    save_address_book(book)
+    
+    # 2. Save Pickle
+    save_pickle(book)
+    
+    # 3. Save CSV
+    try:
+        export_file(book, CSV_STORAGE_PATH)
+    except Exception as e:
+        print(f"Error syncing CSV: {e}")
