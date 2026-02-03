@@ -16,10 +16,10 @@ def main() -> None:
     """
     # 1. Load Data (Pickle with JSON fallback)
     address_book = storage.load_pickle()
-    
+
     if address_book is None:
         address_book = storage.load_address_book()
-        
+
     # 2. Strict Sync (Ensure all formats are consistent on startup)
     storage.save_all(address_book)
 

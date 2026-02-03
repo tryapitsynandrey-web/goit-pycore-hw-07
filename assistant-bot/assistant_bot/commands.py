@@ -216,9 +216,9 @@ def handle_add_phone(book: AddressBook, args: List[str]) -> None:
     
     owner = book.find_phone_global(phone)
     if owner and owner != name:
-         print_duplicate_error(owner, {}, phone, DUPLICATE_PHONE_MESSAGES)
-         return
-         
+        print_duplicate_error(owner, {}, phone, DUPLICATE_PHONE_MESSAGES)
+        return
+
     try:
         if not record.find_phone(phone):
             try:
@@ -226,8 +226,8 @@ def handle_add_phone(book: AddressBook, args: List[str]) -> None:
                 print_success(random.choice(PHONE_ADDED_MESSAGES).format(name=name))
                 storage.save_all(book)
             except ValueError:
-                 print_error(random.choice(INVALID_PHONE_MESSAGES).format(phone=phone))
-                 return
+                print_error(random.choice(INVALID_PHONE_MESSAGES).format(phone=phone))
+                return
         else:
             print_warning(f"Phone {phone} already exists for {name}.")
     except ValueError as e:

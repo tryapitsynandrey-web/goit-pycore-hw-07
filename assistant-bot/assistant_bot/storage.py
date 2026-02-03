@@ -4,9 +4,9 @@ import pickle
 from typing import Optional, Dict, Any, List
 
 from assistant_bot.config import (
-    JSON_STORAGE_PATH, 
-    CSV_STORAGE_PATH, 
-    PICKLE_STORAGE_PATH, 
+    JSON_STORAGE_PATH,
+    CSV_STORAGE_PATH,
+    PICKLE_STORAGE_PATH,
     DATA_DIR
 )
 from assistant_bot.models import AddressBook, Record
@@ -14,10 +14,10 @@ from assistant_bot.utils.console import print_info
 from assistant_bot.import_export import export_file
 
 __all__ = [
-    "load_address_book", 
-    "save_address_book", 
-    "load_pickle", 
-    "save_pickle", 
+    "load_address_book",
+    "save_address_book",
+    "load_pickle",
+    "save_pickle",
     "save_all"
 ]
 
@@ -38,40 +38,40 @@ def load_address_book() -> AddressBook:
             raw_data = json.load(f)
 
         if isinstance(raw_data, dict):
-             for name, data in raw_data.items():
-                 if not isinstance(data, dict):
-                     continue
-                 
-                 try:
-                     record = Record(name)
-                     
-                     # Phones
-                     for p in data.get('phones', []):
-                         record.add_phone(p)
-                         
-                     # Email
-                     email = data.get('email')
-                     if email:
-                         record.add_email(email)
-                         
-                     # Birthday
-                     bday = data.get('birthday')
-                     if bday:
-                         record.add_birthday(bday)
-                         
-                     # Notes
-                     notes = data.get('notes', [])
-                     for n in notes:
-                         record.add_note(n)
-                         
-                     # Tags
-                     tags = data.get('tags', [])
-                     for t in tags:
-                         record.add_tag(t)
-                         
-                     book.add_record(record)
-                 except ValueError as e:
-                     print(f"Skipping invalid record '{name}': {e}")
+            for name, data in raw_data.items():
+                if not isinstance(data, dict):
+                    continue
+
+                try:
+                    record = Record(name)
+
+                    # Phones
+                    for p in data.get('phones', []):
+                        record.add_phone(p)
+
+                    # Email
+                    email = data.get('email')
+                    if email:
+                        record.add_email(email)
+
+                    # Birthday
+                    bday = data.get('birthday')
+                    if bday:
+                        record.add_birthday(bday)
+
+                    # Notes
+                    notes = data.get('notes', [])
+                    for n in notes:
+                        record.add_note(n)
+
+                    # Tags
+                    tags = data.get('tags', [])
+                    for t in tags:
+                        record.add_tag(t)
+
+                    book.add_record(record)
+                except ValueError as e:
+                    print(f"Skipping invalid record '{name}': {e}")
 
     except Exception as e:
         print_info(f"Warning: Failed to load data or starting fresh: {e}")
@@ -115,7 +115,7 @@ def load_pickle() -> Optional[AddressBook]:
     """
     if not os.path.exists(PICKLE_STORAGE_PATH):
         return None
-        
+
     try:
         with open(PICKLE_STORAGE_PATH, 'rb') as f:
             return pickle.load(f)
@@ -129,8 +129,8 @@ def save_pickle(book: AddressBook, path: str = PICKLE_STORAGE_PATH) -> None:
     Saves AddressBook to pickle file.
     """
     if path != PICKLE_STORAGE_PATH:
-         os.makedirs(os.path.dirname(path), exist_ok=True)
-         
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+
     try:
         with open(path, 'wb') as f:
             pickle.dump(book, f)
@@ -147,10 +147,10 @@ def save_all(book: AddressBook) -> None:
     """
     # 1. Save JSON
     save_address_book(book)
-    
+
     # 2. Save Pickle
     save_pickle(book)
-    
+
     # 3. Save CSV
     try:
         export_file(book, CSV_STORAGE_PATH)
